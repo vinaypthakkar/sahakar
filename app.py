@@ -1,54 +1,45 @@
-from flask import Flask, request, jsonify
+import streamlit as st
 import joblib
 import pandas as pd
-import pmdarima as pm # Required for loading AutoARIMA model
+import pmdarima as pm # Important for loading the AutoARIMA model
 
-app = Flask(__name__)
+st.title('Demand Prediction with ARIMA Model')
 
 # Load the pre-trained ARIMA model
 model_filename = 'arima_model.joblib'
 try:
     model = joblib.load(model_filename)
-    print(f"Model '{model_filename}' loaded successfully.")
+    st.success(f"Model '{model_filename}' loaded successfully.")
 except Exception as e:
-    print(f"Error loading model: {e}")
+    st.error(f"Error loading model: {e}")
     model = None
 
-@app.route('/')
-def home():
-    return "ARIMA Model Prediction API. Use /predict endpoint."
+if model is not None:
+    st.header('Make a Prediction')
+    forecast_periods = st.slider(
+        'Select number of periods to forecast (months):',
+        min_value=1,
+        max_value=24,
+        value=3,
+        step=1
+    )
 
-@app.route('/predict', methods=['POST'])
-def predict():
-    if model is None:
-        return jsonify({'error': 'Model not loaded.'}), 500
+    if st.button('Generate Forecast'):
+        try:
+            predictions = model.predict(n_periods=forecast_periods)
+            
+            # Create a DataFrame for better display
+            prediction_df = pd.DataFrame({
+                'Date': predictions.index.strftime('%Y-%m-%d'),
+                'Predicted Demand (000L)': predictions.values
+            })
+            st.subheader(f"Forecast for the next {forecast_periods} months:")
+            st.write(prediction_df)
+            
+            # Optionally, plot the forecast
+            st.line_chart(predictions)
 
-    data = request.get_json(force=True)
-    
-    # The ARIMA model predicts 'n_periods' into the future.
-    # For this example, let's assume the client sends the number of periods to forecast.
-    try:
-        forecast_periods = data.get('forecast_periods', 1) # Default to 1 period if not specified
-        if not isinstance(forecast_periods, int) or forecast_periods <= 0:
-            return jsonify({'error': 'forecast_periods must be a positive integer.'}), 400
-
-        predictions = model.predict(n_periods=forecast_periods)
-        
-        # Convert predictions to a list or dictionary for JSON serialization
-        # Assuming predictions is a pandas Series with a datetime index
-        prediction_output = {
-            'index': predictions.index.strftime('%Y-%m-%d').tolist(),
-            'predictions': predictions.tolist()
-        }
-        
-        return jsonify(prediction_output)
-
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
-if __name__ == '__main__':
-    # To run the app, make sure arima_model.joblib is in the same directory
-    # or provide the full path.
-    # You can run this from your terminal using: python app.py
-    # For production, use a production-ready WSGI server like Gunicorn.
-    app.run(host='0.0.0.0', port=5000)
+        except Exception as e:
+            st.error(f"Error generating forecast: {e}")
+else:
+    st.warning("ARIMA model could not be loaded. Please ensure 'arima_model.joblib' exists.")
